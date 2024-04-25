@@ -165,11 +165,15 @@ app.post('/posts', upload.single('image'), (req, res) => {
     console.log('Received fields:', req.body);
     console.log('Received file:', req.file);
 
-    const { title, content } = req.body;
-    const image = req.file ? req.file.buffer : null;
-    const query = "INSERT INTO products (user_id, title, content, pic) VALUES ('a', ?, ?, ?)";
+    let data = req.body;
+    let user_id = data.user_id;
+    let title = data.title;
+    let content = data.content;
 
-    connection.query(query, [title, content, image], (err, results) => {
+    const image = req.file ? req.file.buffer : null;
+    const query = "INSERT INTO products (user_id, title, content, pic) VALUES (?, ?, ?, ?)";
+
+    connection.query(query, [user_id, title, content, image], (err, results) => {
         if (err) {
             console.error('Database error:', err);
             return res.status(500).send('Database error');
@@ -285,7 +289,6 @@ app.post('/signIn', (req, res) => {
     let userPwd = data.userPwd;
     let userEmail = data.userEmail;
     let userAddress = data.userAddress;
-    console.log(userName,userId,userPwd,userEmail,userAddress)
 
     let query = 'insert into user (user_id, user_name, user_email, user_adrs, user_pw) values (?,?,?,?,?)';
     connection.query(query, [userId,userName,userEmail,userAddress,userPwd], (err, result) => {
@@ -293,21 +296,72 @@ app.post('/signIn', (req, res) => {
         console.log(result);
     })
 })
+//회원정보 수정
+//프로필 수정하기
+app.post('/updateUser', (req, res) => {
+    let data = req.body;
+    let memberId = data.memberId;
+    let memberPw = data.memberPw;
+    let memberAddress = data.memberAddress;
+
+    let query = 'UPDATE USER SET  USER_ADRS = ? ,USER_PW = ? WHERE USER_ID = ?';
+
+    connection.query(query, [memberAddress, memberPw, memberId], (err, result) => {
+
+        if(err) throw err;
+        
+        res.json('ok');
+    })
+})
+
+//admin 로그인
+app.post('/admincheck',(req,res) => {                                            // admin login 확인하기 아이디 비밀번호가 맞으면, ok 값 회신 아니면 retry 회신
+    responseData={};
+    let data = req.body;
+    let user_id = data.user_id;
+    let user_pw = data.user_pw;
+    let query = 'select * from user where user_id=? and user_pw=?'                                     
+    connection.query(query,[user_id,user_pw],(err, rows)=> {
+        if(err) throw err;
+        if(rows[0]) {
+            if(rows[0].user_id == 'ilovecarrot') 
+                    {responseData.state='Admin'}
+            else{                               // 첫번째 행이 값이 있으면 트루
+            console.log(rows);
+            responseData.data = rows;               // rows는 전체 데이터 임
+            responseData.state = 'member';}
+        } else {
+            responseData.state = 'not_member';
+        }
+
+        res.json(responseData);
+    })
+});
 
 //login 영역
 
 app.post('/login', (req, res) => {
-    // const memberid = req.query.memberid;
-    // const pw = req.query.pw;
-    // let id=req.body.id;
-    // let pw=req.body.pw;
     let obj = req.body;
-    // const { id, pw } = req.body;
-    console.log('obj:'+obj);
-    console.log('id:'+obj.params.id);
-    console.log('pwd:'+obj.params.pwd);
     let responseData = {};
-    let query = 'Select * from user where user_id = ? and user_pw = ?';
+    let query = `
+    SELECT 
+            u.user_id AS user_id,
+            u.user_name AS user_name,
+            u.user_email AS user_email,
+            u.user_adrs AS user_adrs,
+            u.user_pw AS user_pw,
+            u.is_admin AS is_admin,
+            COALESCE(pl.sumPotato, 0) AS sum_potato
+        FROM 
+            (user u
+        LEFT JOIN 
+            (SELECT pay.user_id, SUM(pay.potato_unit) AS sumPotato 
+             FROM pay_log pay 
+             GROUP BY pay.user_id) pl 
+        ON u.user_id = pl.user_id)
+        WHERE u.user_id=? and u.user_pw=?;
+    `;
+
     connection.query(query, [obj.params.id, obj.params.pwd], (err, rows) => {
       if (err) {
         console.error('Database error:', err);
@@ -326,43 +380,6 @@ app.post('/login', (req, res) => {
       res.json(responseData);
     });
   });
-
-
-
-
-
-
-
-// app.post('/login',(req, res)=>{
-//     console.log('req:'+req);
-//     let data = req.body;
-//     console.log('data:'+data)
-//     let userId = data.userId;
-//     console.log('userId:'+userId)
-//     let userPwd = data.userPwd;
-//     console.log('userPwd:'+userPwd)
-//     let responseData ={};
-
-//     let query = 'Select * from user where user_id = ? and user_pw = ?';
-//     connection.query(query,[userId, userPwd],(err, rows)=>{ // 번쨰 매개변수 = > 쿼리문  // err은 오류 rows는 배열의 형태로 값이 하나라도 있으면 들어옴
-//         if(err) throw err;
-//          if (rows.length > 0) {
-//             responseData.state = 'ok';
-//             console.log('123');
-//             responseData.data = rows.map(row => ({
-//                 ...row,
-//             }));
-//             console.log(responseData.data);
-//         } else {
-//             responseData.state = 'none';
-//         }
-//         console.log('end');
-//         res.setHeader('Content-Type', 'application/json');
-//         res.json(responseData);
-//         console.log(responseData);
-//     });
-// });
-
 
 //admin 영역 
 
@@ -437,6 +454,20 @@ app.get('/gettotalcomeinfo', (req, res) => {                      // 월별 (충
     }
 });
 
+//페이정보다운로드
+app.get('/getpayinfo',(req,res) => {                       //상준 / 다운로드 받을 정보 페이 테이블 제이슨 보내기
+    let responseData = {};
+    connection.query('select * from pay_log',(err, rows)=> {
+        if(err) throw err;
+        if(rows[0]) {                               // 첫번째 행이 값이 있으면 트루
+            console.log(rows[0]);
+            responseData.data = rows;               // rows는 전체 데이터 임          
+        } else {
+            responseData.state = 'none';
+        }
+            res.json(responseData);
+    })
+})
 
 app.get('/gettotallineinfo', (req, res) => {                      // 월별 (충전-지출)
     let responseData = [];
@@ -491,4 +522,33 @@ app.get('/getincomeuserinfoline', (req, res) => {                      // 월별
             }
         });
     }
+});
+
+app.post('/chargePotato',(req, res)=>{
+    console.log('req:',req)
+    let data = req.body;
+    console.log('data:',data);
+    let user_id = data.user_id;
+    let unit_potato = data.unit_potato;
+    let potato_pay = data.potato_pay;
+
+    let query = 'INSERT INTO pay_log(user_id, potato_unit, potato_inout, potato_pay, in_out) VALUE(?,?,1,?,1);'
+    connection.query(query, [user_id,unit_potato,potato_pay], (err, result) => {
+        if(err) throw err;
+        console.log(result);
+    res.json('ok')
+})});
+
+    app.get('/getPotato',(req, res)=>{
+    //req.query.boardId;
+    console.log('come')
+    let id = req.query.id; 
+    let query = "SELECT sum(potato_unit) FROM pay_log where user_id=?";
+    connection.query(query, [id],  (err, result) => {
+        if (err) {
+            console.error('Database error:', err);
+        }
+        console.log('potato:',result)
+        res.json(result);
+    });
 });
