@@ -61,7 +61,7 @@ app.get('/getDetail', (req, res) => {
     console.log('come')
     let responseData = {};
     let id = req.query.boardId; 
-    let query = "SELECT title,content,createdAt,pic FROM products where id=?";
+    let query = "SELECT user_id, title,price, content,createdAt,pic FROM products where id=?";
     connection.query(query, [id],  (err, rows) => {
         if (err) {
             console.error('Database error:', err);
@@ -168,12 +168,13 @@ app.post('/posts', upload.single('image'), (req, res) => {
     let data = req.body;
     let user_id = data.user_id;
     let title = data.title;
+    let price = data.price;
     let content = data.content;
 
     const image = req.file ? req.file.buffer : null;
-    const query = "INSERT INTO products (user_id, title, content, pic) VALUES (?, ?, ?, ?)";
+    const query = "INSERT INTO products (user_id, title, price, content, pic) VALUES (?, ?, ?, ?, ?)";
 
-    connection.query(query, [user_id, title, content, image], (err, results) => {
+    connection.query(query, [user_id, title, price, content, image], (err, results) => {
         if (err) {
             console.error('Database error:', err);
             return res.status(500).send('Database error');
@@ -190,10 +191,11 @@ app.post('/updatePost', (req, res) => {
     let data = req.body;
     let id = data.id;
     let title = data.title;
+    let price = data.price;
     let content = data.content;
 
-    let query = "UPDATE PRODUCTS SET title=?, content=? where id=?";
-    connection.query(query,[title,content,id],(err, results) => {
+    let query = "UPDATE PRODUCTS SET title=?,price=?, content=? where id=?";
+    connection.query(query,[title,price,content,id],(err, results) => {
         if (err) {
             console.error('Database error:', err);
         } 
@@ -324,7 +326,7 @@ app.post('/admincheck',(req,res) => {                                           
     connection.query(query,[user_id,user_pw],(err, rows)=> {
         if(err) throw err;
         if(rows[0]) {
-            if(rows[0].user_id == 'ilovecarrot') 
+            if(rows[0].user_id == 'admin') 
                     {responseData.state='Admin'}
             else{                               // 첫번째 행이 값이 있으면 트루
             console.log(rows);
@@ -355,7 +357,7 @@ app.post('/login', (req, res) => {
         FROM 
             (user u
         LEFT JOIN 
-            (SELECT pay.user_id, SUM(pay.potato_unit) AS sumPotato 
+            (SELECT pay.user_id, SUM(case when in_out=1 then potato_unit else -potato_unit end) AS sumPotato 
              FROM pay_log pay 
              GROUP BY pay.user_id) pl 
         ON u.user_id = pl.user_id)
@@ -532,7 +534,7 @@ app.post('/chargePotato',(req, res)=>{
     let unit_potato = data.unit_potato;
     let potato_pay = data.potato_pay;
 
-    let query = 'INSERT INTO pay_log(user_id, potato_unit, potato_inout, potato_pay, in_out) VALUE(?,?,1,?,1);'
+    let query = 'INSERT INTO pay_log(user_id, potato_unit, potato_inout, potato_pay, in_out) VALUES (?,?,1,?,1);'
     connection.query(query, [user_id,unit_potato,potato_pay], (err, result) => {
         if(err) throw err;
         console.log(result);
@@ -550,5 +552,51 @@ app.post('/chargePotato',(req, res)=>{
         }
         console.log('potato:',result)
         res.json(result);
+    });
+});
+
+
+
+//결제기능
+
+app.post('/postPayment', (req, res) => {
+    let obj = req.body;
+    console.log('obj:'+obj);
+    let id = obj.product_id;
+        console.log('id:'+id);
+    let senderId = obj.senderId;
+      console.log('senderId:'+senderId);
+    let receiveId = obj.receiveId;
+      console.log('receiveId:'+receiveId);
+    let price = obj.price;
+      console.log('price:'+price);
+    let price_money = obj.price_money;
+      console.log('price:'+price);
+
+    let responseData = {};
+    let query1 = 'INSERT INTO PAY_LOG (user_id, potato_unit, potato_inout, potato_pay, in_out) VALUES (?,?,1,?,1);';
+    connection.query(query1, [receiveId, price, price_money], (err, result) => {
+            if (err) {
+            console.error('Database error:', err);
+            return res.status(500).send('Database error');
+        }
+        console.log('Insert result:', result);
+    });
+    let query2 = 'INSERT INTO PAY_LOG (user_id, potato_unit, potato_inout, potato_pay, in_out) VALUES (?,?,0,?,0);';
+    connection.query(query2, [senderId, price, price_money], (err, result) => {
+            if (err) {
+            console.error('Database error:', err);
+            return res.status(500).send('Database error');
+        }
+        console.log('Insert result:', result);
+    });
+
+    let query3 = "DELETE FROM products where id=?";
+    connection.query(query3,[id],(err, results) => {
+        if (err) {
+            console.error('Database error:', err);
+        } 
+        console.log('result:', results);
+        res.json('ok');
     });
 });
